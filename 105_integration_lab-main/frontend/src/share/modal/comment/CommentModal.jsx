@@ -1,19 +1,78 @@
 import { Box, Button, Card, Modal, TextField } from '@mui/material';
-import React, { useState } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { useKeyDown } from '../../../hooks/useKeyDown';
 import CommentCard from './components/CommentCard';
 
+import Axios from '../../AxiosInstance';
+import { AxiosError } from 'axios';
+import GlobalContext from '../../Context/GlobalContext';
+import Cookies from 'js-cookie';
+
 const CommentModal = ({ open = false, handleClose = () => {} }) => {
+  const { user, setStatus } = useContext(GlobalContext);
   const [textField, setTextField] = useState('');
+  const [textFieldError, settextFieldError] = useState('');
   const [comments, setComments] = useState([]);
 
   useKeyDown(() => {
     handleAddComment();
   }, ['Enter']);
 
-  const handleAddComment = () => {
+  useEffect(() => {
+    // TODO: Implement get notes by user's token
+    const userToken = Cookies.get('UserToken');
+    if (userToken !== undefined && userToken !== 'undefined') {
+      Axios.get('/comment', { headers: { Authorization: `Bearer ${userToken}` } }).then((res) => {
+        setComments(
+          res.data.data.map((el) => {
+            return { id: el.id, msg: el.text };
+          })
+        );
+      });
+    }
+  }, [user]);
+
+  const handleAddComment = async () => {
     // TODO implement logic
-    setComments([...comments, { id: Math.random(), msg: textField }]);
+    if (!validateForm()) return;
+    
+    try {
+      const userToken = Cookies.get('UserToken');
+      const response = await Axios.post(
+        '/comment',
+        { text: textField },
+        {
+          headers: { Authorization: `Bearer ${userToken}` },
+        }
+      );
+      if (response.data.success) {
+        setStatus({ severity: 'success', msg: 'Create comment successfully' });
+        setComments((comments) => [...comments, { id: response.data.data.id, msg: textField }]);
+        console.log('Create comment successfully');
+        setTextField('');
+      }
+    } catch (e) {
+      setTextField('');
+      if (e instanceof AxiosError)
+        if (e.response)
+          return setStatus({
+            msg: e.response.data.error,
+            severity: 'error',
+          });
+      return setStatus({
+        msg: e.message,
+        severity: 'error',
+      });
+    }
+  };
+
+  const validateForm = () => {
+    let isValid = true;
+    if (!textField) {
+      settextFieldError('Comment is required');
+      isValid = false;
+    }
+    return isValid;
   };
 
   return (
@@ -41,6 +100,8 @@ const CommentModal = ({ open = false, handleClose = () => {} }) => {
             value={textField}
             onChange={(e) => setTextField(e.target.value)}
             fullWidth
+            error={textFieldError !== ''}
+            helperText={textFieldError}
             placeholder="Type your comment"
             variant="standard"
           />
@@ -60,7 +121,7 @@ const CommentModal = ({ open = false, handleClose = () => {} }) => {
           }}
         >
           {comments.map((comment) => (
-            <CommentCard comment={comment} key={comment.id} />
+            <CommentCard comment={comment} key={comment.id} setComments={setComments} />
           ))}
         </Box>
       </Card>
